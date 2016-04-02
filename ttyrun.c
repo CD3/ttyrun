@@ -96,7 +96,7 @@ void doinput(void);
 void dooutput(void);
 void doshell(const char*);
 
-int parsecmd(char*,char*);
+int parsectl(char*,char*);
 int passthrough(const char*);
 void delay(const char*);
 
@@ -225,7 +225,13 @@ doinput()
     if( strcmp( sbuf+sbufi*BUFSIZ, "EOF" ) == 0 )
       break;
 
-    parsecmd( sbuf+sbufi*BUFSIZ, cbuf );
+    if(nflg) // non-interactive mode
+      delay("5"); // half second dalay
+    else // user has to hit enter to start new command
+      cc = read(0, cbuf, BUFSIZ);
+
+
+    parsectl( sbuf+sbufi*BUFSIZ, cbuf );
 
     if( strncmp( cbuf, "pass", strlen("pass") ) == 0 )
     {
@@ -253,6 +259,7 @@ doinput()
       }
 
       (void) write(master, ibuf+i, 1);
+
       delay("2");
     }
 
@@ -267,7 +274,7 @@ doinput()
 }
 
 int
-parsecmd( char* ibuf, char* cbuf )
+parsectl( char* ibuf, char* cbuf )
 {
   int i, j, n;
   i = 0;
