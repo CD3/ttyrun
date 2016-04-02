@@ -96,9 +96,9 @@ void doinput(void);
 void dooutput(void);
 void doshell(const char*);
 
-void delay(size_t);
 int parsecmd(char*,char*);
 int passthrough(const char*);
+void delay(const char*);
 
 char	*shell;
 FILE	*ifile;
@@ -227,17 +227,16 @@ doinput()
 
     parsecmd( sbuf+sbufi*BUFSIZ, cbuf );
 
-    if( strcmp( cbuf, "input" ) == 0 )
+    if( strncmp( cbuf, "pass", strlen("pass") ) == 0 )
     {
       passthrough("\n\r");
       continue;
     }
 
-    if( strcmp( cbuf, "delay" ) == 0 && nflg )
+    if( strncmp( cbuf, "delay", strlen("delay") ) == 0 && nflg )
     {
       // 1 second delay
-      delay(5e8);
-      delay(5e8);
+      delay( strchr(cbuf,' ') );
       continue;
     }
 
@@ -248,13 +247,13 @@ doinput()
       if( strchr( "\n\r\0", ibuf[i] ) )
       {
         if(nflg) // non-interactive mode
-          delay(5e8); // half second dalay
+          delay("5"); // half second dalay
         else // user has to hit enter when newline/return is incountered
           cc = read(0, cbuf, BUFSIZ);
       }
 
       (void) write(master, ibuf+i, 1);
-      delay(2e8); // 2 ms delay
+      delay("2");
     }
 
 
@@ -264,19 +263,6 @@ doinput()
   // read user input for remainder of the session.
   passthrough(NULL);
 	done();
-}
-
-int
-passthrough(const char *terms)
-{
-	register int cc;
-	char buf[BUFSIZ];
-	while ((cc = read(0, buf, 1)) > 0)
-  {
-		(void) write(master, buf, 1);
-    if( terms != NULL && strchr( terms, buf[0] ) )
-        break;
-  }
 }
 
 int
@@ -300,32 +286,48 @@ parsecmd( char* ibuf, char* cbuf )
 
   i++;
 
-
   while( i < n-1 && ibuf[i] == ' ' )
     i++;
 
   if( i == n-2 )
     return 0;
 
-  j = i;
-  while( j < n-1 && strchr( "\n\r ", ibuf[j] ) == NULL )
-    j++;
-
-  strncpy( cbuf, ibuf+i, j-i );
+  strcpy( cbuf, ibuf+i );
 
   return 1;
 }
 
 
-void
-delay(size_t dt)
+int
+passthrough(const char *terms)
 {
+  // pass the user input to the tty until one of
+  // the terminating chars is read.
+	register int cc;
+	char buf[BUFSIZ];
+	while ((cc = read(0, buf, 1)) > 0)
+  {
+		(void) write(master, buf, 1);
+    if( terms != NULL && strchr( terms, buf[0] ) )
+        break;
+  }
+}
+
+void
+delay(const char *_dt)
+{
+  // delay, by calling nanosleep, for a specified
+  // number of tenths of a second.
+  // we accept a string, as opposed to an int, so that we
+  // can support extracting the delay argument from a text file.
+  long long dt;
   if( !dflg )
     return;
+
+  dt = strtoll( _dt == NULL ? "5" : _dt, NULL, 10 )*1e8;
   struct timespec t;
-  t.tv_sec = 0;
-  t.tv_nsec = 0;
-  t.tv_nsec = dt;
+  t.tv_sec  = dt/1000000000;
+  t.tv_nsec = dt%1000000000;
   nanosleep(&t, NULL);
 
   return;
