@@ -259,6 +259,7 @@ doinput()
 
   }
 
+  free(sbuf);
 
   // read user input for remainder of the session.
   passthrough(NULL);
