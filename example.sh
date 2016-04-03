@@ -1,7 +1,8 @@
-ls
+
 pwd
 cd ~/tmp
-# delay 100
-ls -l /
+# delay 300
+pwd
+# passthrough
 pwd
 exit

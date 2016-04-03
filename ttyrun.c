@@ -96,7 +96,7 @@ void doinput(void);
 void dooutput(void);
 void doshell(const char*);
 
-int parsectl(char*,char*);
+int parsectl(const char*,char*);
 int passthrough(const char*);
 void delay(const char*);
 
@@ -219,34 +219,40 @@ doinput()
   }
   strcpy( sbuf+sbufi*BUFSIZ, "EOF" );
 
+
+
   // loop through session commands
-  for( sbufi = 0; sbufi < sbufN; sbufi++)
+  for( sbufi = 0; sbufi < sbufN; sbufi++ )
   {
     if( strcmp( sbuf+sbufi*BUFSIZ, "EOF" ) == 0 )
-      break;
+      break; // last line in the file
 
+    // parse the line to see if it is a 
+    // control command
+    parsectl( sbuf+sbufi*BUFSIZ, cbuf );
+    // handl control commands
+    if( strstr( cbuf, "pass" ) != NULL )
+    {
+      passthrough("\n\r");
+      cbuf[0] = '\0';
+      continue;
+    }
+
+    if( strstr( cbuf, "delay" ) != NULL )
+    {
+      delay( strchr(cbuf,' ') );
+      cbuf[0] = '\0';
+      continue;
+    }
+
+
+    // get ready
     if(nflg) // non-interactive mode
       delay("5"); // half second dalay
     else // user has to hit enter to start new command
       cc = read(0, cbuf, BUFSIZ);
 
-
-    parsectl( sbuf+sbufi*BUFSIZ, cbuf );
-
-    if( strncmp( cbuf, "pass", strlen("pass") ) == 0 )
-    {
-      passthrough("\n\r");
-      continue;
-    }
-
-    if( strncmp( cbuf, "delay", strlen("delay") ) == 0 && nflg )
-    {
-      // 1 second delay
-      delay( strchr(cbuf,' ') );
-      continue;
-    }
-
-
+    // start sending commands to the shell
     strcpy( ibuf, sbuf+sbufi*BUFSIZ );
     for( i = 0; i < strlen(ibuf); i++)
     {
@@ -258,6 +264,7 @@ doinput()
           cc = read(0, cbuf, BUFSIZ);
       }
 
+      // send character
       (void) write(master, ibuf+i, 1);
 
       delay("2");
@@ -274,33 +281,20 @@ doinput()
 }
 
 int
-parsectl( char* ibuf, char* cbuf )
+parsectl( const char* ibuf, char* cbuf )
 {
-  int i, j, n;
-  i = 0;
-  n = strlen(ibuf);
-
-  while( i < n-1 && ibuf[i] == ' ' )
-    i++;
-
-  strcpy( cbuf, "none" );
-
-
-  if( i == n-2 )
+  // control commands are given in comments.
+  // any line that starts with a # could be a control command
+  if( strchr( ibuf, '#' ) == NULL )
     return 0;
 
-  if(ibuf[i] != '#')
+  // find first '#' and first non-space. if these are the same,
+  // then we have a line that starts with (possibly) white space and
+  // a '#'
+  if( strspn( ibuf, "#" ) == strcspn( ibuf, " ")+1 )
     return 0;
 
-  i++;
-
-  while( i < n-1 && ibuf[i] == ' ' )
-    i++;
-
-  if( i == n-2 )
-    return 0;
-
-  strcpy( cbuf, ibuf+i );
+  strcpy( cbuf, ibuf + strspn(ibuf," #") );
 
   return 1;
 }
