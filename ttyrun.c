@@ -252,6 +252,7 @@ doinput()
     else // user has to hit enter to start new command
       cc = read(0, cbuf, BUFSIZ);
 
+
     // start sending commands to the shell
     strcpy( ibuf, sbuf+sbufi*BUFSIZ );
     for( i = 0; i < strlen(ibuf); i++)
@@ -262,6 +263,9 @@ doinput()
           delay("5"); // half second dalay
         else // user has to hit enter when newline/return is incountered
           cc = read(0, cbuf, BUFSIZ);
+
+        if(cbuf[0] == 'x')
+          done();
       }
 
       // send character
