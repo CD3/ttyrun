@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -O2 -DSVR4
+CFLAGS = -O2 -DSVR4 -D_XOPEN_SOURCE=500
 
 TARGET = ttyrun
 
