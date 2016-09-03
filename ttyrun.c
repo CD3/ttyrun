@@ -46,13 +46,11 @@
 /* 2016-04-01 CD Clark III <clifton.clark@gmail.com>
  * - modify `ttyrec' to create `ttyrun'.
  */
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <termios.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
-#include <sys/file.h>
-#include <sys/signal.h>
+#include <sys/wait.h>
+
+#include <termios.h>
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
@@ -370,8 +368,6 @@ delay(const char *_dt)
 
   return;
 }
-
-#include <sys/wait.h>
 
 void
 finish()
