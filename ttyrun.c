@@ -64,9 +64,6 @@
 #include <stropts.h>
 #endif /* SVR4 */
 
-#include <sys/time.h>
-#include "ttyrun.h"
-
 #define HAVE_inet_aton
 #define HAVE_scsi_h
 #define HAVE_kd_h
@@ -87,6 +84,14 @@
 #endif /* not _POSIX_VISIBLE && not CDISABLE */
 #endif /* SVR4 && ! CDEL */
 
+
+typedef struct header {
+    struct timeval tv;
+    int len;
+} Header;
+
+
+// FUNCTIONS
 void done(void);
 void fail(void);
 void fixtty(void);
@@ -103,6 +108,7 @@ void delay(const char*);
 void print_usage(FILE*);
 void print_help(FILE*);
 
+// GLOBAL VARS
 char	*shell;
 FILE	*ifile;
 int	master;
