@@ -100,6 +100,9 @@ int parsectl(const char*,char*);
 int passthrough(const char*);
 void delay(const char*);
 
+void print_usage(FILE*);
+void print_help(FILE*);
+
 char	*shell;
 FILE	*ifile;
 int	master;
@@ -143,9 +146,12 @@ main(argc, argv)
 			command = strdup(optarg);
 			break;
 		case 'h':
+      print_help(stdout);
+			exit(1);
+      break;
 		case '?':
 		default:
-			fprintf(stderr, _("usage: ttyrun [-e command] [-d] [-n] [file]\n"));
+      print_usage(stderr);
 			exit(1);
 		}
 	argc -= optind;
@@ -188,6 +194,27 @@ main(argc, argv)
 	doinput();
 
 	return 0;
+}
+
+void print_usage(FILE* fp)
+{
+  fprintf(fp, _("usage: ttyrun [-e command] [-d] [-n] [file]\n"));
+}
+
+void print_help(FILE* fp)
+{
+  print_usage(fp);
+  fprintf(fp, _("\n"));
+  fprintf(fp, _("ttyrun reads a text file an executes each line as if it were typed into a shell.     \n"));
+  fprintf(fp, _("By default, lines are loaded but not executed until the user hits return. This       \n"));
+  fprintf(fp, _("is useful for giving demonstrations or tutorials from the command line.              \n"));
+  fprintf(fp, _("                                                                                     \n"));
+  fprintf(fp, _("control commands                                                                     \n"));
+  fprintf(fp, _("   Press 'Return' : send line to stdin of shell.                                     \n"));
+  fprintf(fp, _("   Press 'x' : exit                                                                  \n"));
+  fprintf(fp, _("   # passthrough : let user input passthrough.                                       \n"));
+  fprintf(fp, _("   # delay DELAY : add a DELAY second delay.                                         \n"));
+
 }
 
 void
@@ -233,22 +260,22 @@ doinput()
     // handl control commands
     if( strstr( cbuf, "pass" ) != NULL )
     {
-      passthrough("\n\r");
-      cbuf[0] = '\0';
+      passthrough("\n\r"); // passthrough input until a blank line is entered
+      cbuf[0] = '\0'; // clear the command buffer
       continue;
     }
 
     if( strstr( cbuf, "delay" ) != NULL )
     {
-      delay( strchr(cbuf,' ') );
-      cbuf[0] = '\0';
+      delay( strchr(cbuf,' ') ); // pause for some time
+      cbuf[0] = '\0'; // clear command buffer
       continue;
     }
 
 
     // get ready
     if(nflg) // non-interactive mode
-      delay("5"); // half second dalay
+      delay("5"); // use a half second dalay between commands
     else // user has to hit enter to start new command
       cc = read(0, cbuf, BUFSIZ);
 
@@ -258,7 +285,7 @@ doinput()
     for( i = 0; i < strlen(ibuf); i++)
     {
       if( strchr( "\n\r\0", ibuf[i] ) )
-      {
+      { // newline or end of string
         if(nflg) // non-interactive mode
           delay("5"); // half second dalay
         else // user has to hit enter when newline/return is incountered
@@ -302,7 +329,6 @@ parsectl( const char* ibuf, char* cbuf )
 
   return 1;
 }
-
 
 int
 passthrough(const char *terms)
@@ -410,9 +436,9 @@ doshell(const char* command)
 	(void) close(slave);
 
 	if (!command) {
-		execl(shell, strrchr(shell, '/') + 1, "-i", 0);
+		execl(shell, strrchr(shell, '/') + 1, "-i", (char *)0);
 	} else {
-		execl(shell, strrchr(shell, '/') + 1, "-c", command, 0);	
+		execl(shell, strrchr(shell, '/') + 1, "-c", command, (char *)0);	
 	}
 	perror(shell);
 	fail();
