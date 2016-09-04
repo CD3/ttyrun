@@ -126,10 +126,7 @@ char	line[] = "/dev/ptyXX";
 int	dflg;
 int	nflg;
 
-int
-main(argc, argv)
-	int argc;
-	char *argv[];
+int main(int argc, char *argv[])
 {
 	extern int optind;
 	int ch;
@@ -137,6 +134,8 @@ main(argc, argv)
 	char *getenv();
 	char *command = NULL;
 	char *session = NULL;
+
+	char cbuf[BUFSIZ];   // command buffer
 
 	while ((ch = getopt(argc, argv, "e:dnh?")) != EOF)
 		switch((char)ch) {
@@ -179,6 +178,8 @@ main(argc, argv)
 	fixtty();
 
 	(void) signal(SIGCHLD, finish);
+
+  // create processes to do the work
 	child = fork();
 	if (child < 0) {
 		perror("fork");
@@ -191,11 +192,11 @@ main(argc, argv)
 			fail();
 		}
 		if (child)
-			dooutput();
+			dooutput(); // sub-child
 		else
-			doshell(command);
+			doshell(command); // child
 	}
-	doinput();
+	doinput(); // everybody
 
 	return 0;
 }
@@ -221,15 +222,14 @@ void print_help(FILE* fp)
 
 }
 
-void
-doinput()
+void doinput()
 {
 	register int cc;
-	char ibuf[BUFSIZ];
+	char ibuf[BUFSIZ];   // input buffer
 	char cbuf[BUFSIZ];   // command buffer
   char *sbuf;          // session file buffer
   int sbufi, sbufN;
-  int i;
+  int i, j;
 #ifdef HAVE_openpty
 	(void) close(slave);
 #endif
@@ -258,44 +258,70 @@ doinput()
     if( strcmp( sbuf+sbufi*BUFSIZ, "EOF" ) == 0 )
       break; // last line in the file
 
-    // parse the line to see if it is a 
-    // control command
-    parsectl( sbuf+sbufi*BUFSIZ, cbuf );
-    // handl control commands
-    if( strstr( cbuf, "pass" ) != NULL )
+    // check line for a control command
+    if( parsectl( sbuf+sbufi*BUFSIZ, cbuf ) )
     {
-      passthrough("\n\r"); // passthrough input until a blank line is entered
-      cbuf[0] = '\0'; // clear the command buffer
+
+      // handle control commands
+      if( strstr( cbuf, "pass" ) != NULL )
+      {
+        passthrough("\n\r"); // passthrough input until a blank line is entered
+        cbuf[0] = '\0'; // clear the command buffer
+        continue;
+      }
+
+      if( strstr( cbuf, "delay" ) != NULL )
+      {
+        delay( strchr(cbuf,' ') ); // pause for some time
+        cbuf[0] = '\0'; // clear command buffer
+        continue;
+      }
+
       continue;
+
     }
 
-    if( strstr( cbuf, "delay" ) != NULL )
-    {
-      delay( strchr(cbuf,' ') ); // pause for some time
-      cbuf[0] = '\0'; // clear command buffer
-      continue;
-    }
-
-
-    // get ready
-    if(nflg) // non-interactive mode
-      delay("5"); // use a half second dalay between commands
-    else // user has to hit enter to start new command
-      cc = read(0, cbuf, BUFSIZ);
-
-
-    // start sending commands to the shell
+    // the line is an input line
+    // copy line to the input buffer
     strcpy( ibuf, sbuf+sbufi*BUFSIZ );
+
+    // ok, we have an input line. if the non-interactive
+    // mode floag was given, then we will pause for 1/2 second before
+    // we write the line to the shell. otherwise, we wait for the user
+
+    // wait for user to start
+    cbuf[0] = 0;
+    while( cbuf[0] != 's' && cbuf[0] != 'S' && cbuf[0] != '\n' && cbuf[0] != '\r' )
+      cc = read(0,cbuf,1);
+
+
+    // send the input to the shell
     for( i = 0; i < strlen(ibuf); i++)
     {
-      if( strchr( "\n\r\0", ibuf[i] ) )
+      if( ibuf[i] == '\n' || ibuf[i] == '\r' )
       { // newline or end of string
+
+        // user has to 
         if(nflg) // non-interactive mode
           delay("5"); // half second dalay
-        else // user has to hit enter when newline/return is incountered
-          cc = read(0, cbuf, BUFSIZ);
-
-        if(cbuf[0] == 'x')
+        else // read user command
+        {
+          j = 0;
+          while( read(0,cbuf+j,BUFSIZ-j) > 0 ) // read characters until buffer is full or end of file or error
+          {
+            if( cbuf[j] == '\n' || cbuf[j] == '\r' )
+            {
+              cbuf[j] == '\0';
+              break;
+            }
+            j++;
+          }
+        }
+          
+        // process commands
+        printf("'%s'\n",cbuf);
+        fflush(stdout);
+        if( strcmp( cbuf, "x" ) == 0 || strcmp( cbuf, "exit" ) == 0)
           done();
       }
 
@@ -315,62 +341,7 @@ doinput()
 	done();
 }
 
-int
-parsectl( const char* ibuf, char* cbuf )
-{
-  // control commands are given in comments.
-  // any line that starts with a # could be a control command
-  if( strchr( ibuf, '#' ) == NULL )
-    return 0;
-
-  // find first '#' and first non-space. if these are the same,
-  // then we have a line that starts with (possibly) white space and
-  // a '#'
-  if( strspn( ibuf, "#" ) == strcspn( ibuf, " ")+1 )
-    return 0;
-
-  strcpy( cbuf, ibuf + strspn(ibuf," #") );
-
-  return 1;
-}
-
-int
-passthrough(const char *terms)
-{
-  // pass the user input to the tty until one of
-  // the terminating chars is read.
-	register int cc;
-	char buf[BUFSIZ];
-	while ((cc = read(0, buf, 1)) > 0)
-  {
-		(void) write(master, buf, 1);
-    if( terms != NULL && strchr( terms, buf[0] ) )
-        break;
-  }
-}
-
-void
-delay(const char *_dt)
-{
-  // delay, by calling nanosleep, for a specified
-  // number of tenths of a second.
-  // we accept a string, as opposed to an int, so that we
-  // can support extracting the delay argument from a text file.
-  long long dt;
-  if( !dflg )
-    return;
-
-  dt = strtoll( _dt == NULL ? "5" : _dt, NULL, 10 )*1e8;
-  struct timespec t;
-  t.tv_sec  = dt/1000000000;
-  t.tv_nsec = dt%1000000000;
-  nanosleep(&t, NULL);
-
-  return;
-}
-
-void
-finish()
+void finish()
 {
 #if defined(SVR4)
 	int status;
@@ -399,7 +370,7 @@ dooutput()
 	int cc;
 	char obuf[BUFSIZ];
 
-	setbuf(stdout, NULL);
+	setbuf(stdout, NULL); // set stdout to unbuffered
 	(void) close(0);
 #ifdef HAVE_openpty
 	(void) close(slave);
@@ -594,3 +565,62 @@ getslave()
 	(void) ioctl(slave, TIOCSCTTY, 0);
 #endif /* SVR4 */
 }
+
+
+
+
+
+// parse a line to see if it contains a control command
+int parsectl( const char* ibuf, char* cbuf )
+{
+  // control commands are given in comments.
+  // any line that starts with a # could be a control command
+  if( strchr( ibuf, '#' ) == NULL )
+    cbuf[0] = '\0';
+    return 0;
+
+  // find first '#' and first non-space. if these are the same,
+  // then we have a line that starts with (possibly) white space and
+  // a '#'
+  if( strspn( ibuf, "#" ) == strcspn( ibuf, " ")+1 )
+    return 0;
+
+  // copy the command into cbuf
+  strcpy( cbuf, ibuf + strspn(ibuf," #") );
+
+  return 1;
+}
+
+int passthrough(const char *terms)
+{
+  // pass the user input to the tty until one of
+  // the terminating chars is read.
+	register int cc;
+	char buf[BUFSIZ];
+	while ((cc = read(0, buf, 1)) > 0)
+  {
+		(void) write(master, buf, 1);
+    if( terms != NULL && strchr( terms, buf[0] ) )
+        break;
+  }
+}
+
+void delay(const char *_dt)
+{
+  // delay, by calling nanosleep, for a specified
+  // number of tenths of a second.
+  // we accept a string, as opposed to an int, so that we
+  // can support extracting the delay argument from a text file.
+  long long dt;
+  if( !dflg )
+    return;
+
+  dt = strtoll( _dt == NULL ? "5" : _dt, NULL, 10 )*1e8;
+  struct timespec t;
+  t.tv_sec  = dt/1000000000;
+  t.tv_nsec = dt%1000000000;
+  nanosleep(&t, NULL);
+
+  return;
+}
+
