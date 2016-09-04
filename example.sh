@@ -5,4 +5,5 @@ cd ~/tmp
 pwd
 # passthrough
 pwd
+# comment
 exit

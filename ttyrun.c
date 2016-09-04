@@ -100,8 +100,8 @@ void dooutput(void);
 void doshell(const char*);
 
 int parsectl(const char*,char*);
-int passthrough(const char*);
-void delay(const char*);
+int passthrough();
+void delay(long);
 
 void print_usage(FILE*);
 void print_help(FILE*);
@@ -126,10 +126,7 @@ char	line[] = "/dev/ptyXX";
 int	dflg;
 int	nflg;
 
-int
-main(argc, argv)
-	int argc;
-	char *argv[];
+int main(int argc, char *argv[])
 {
 	extern int optind;
 	int ch;
@@ -137,6 +134,8 @@ main(argc, argv)
 	char *getenv();
 	char *command = NULL;
 	char *session = NULL;
+
+	char cbuf[BUFSIZ];   // command buffer
 
 	while ((ch = getopt(argc, argv, "e:dnh?")) != EOF)
 		switch((char)ch) {
@@ -179,6 +178,8 @@ main(argc, argv)
 	fixtty();
 
 	(void) signal(SIGCHLD, finish);
+
+  // create processes to do the work
 	child = fork();
 	if (child < 0) {
 		perror("fork");
@@ -191,11 +192,11 @@ main(argc, argv)
 			fail();
 		}
 		if (child)
-			dooutput();
+			dooutput(); // sub-child
 		else
-			doshell(command);
+			doshell(command); // child
 	}
-	doinput();
+	doinput(); // everybody
 
 	return 0;
 }
@@ -213,23 +214,30 @@ void print_help(FILE* fp)
   fprintf(fp, _("By default, lines are loaded but not executed until the user hits return. This       \n"));
   fprintf(fp, _("is useful for giving demonstrations or tutorials from the command line.              \n"));
   fprintf(fp, _("                                                                                     \n"));
+  fprintf(fp, _("options                                                                              \n"));
+  fprintf(fp, _("   -d : add delays when sending input characters to shell. simulates typing.         \n"));
+  fprintf(fp, _("   -n : non-interactive mode. don't wait for user comments, just run the script.     \n"));
+  fprintf(fp, _("                                                                                     \n"));
   fprintf(fp, _("control commands                                                                     \n"));
+  fprintf(fp, _("  commands can be given in the session file, or input by the user. all commands      \n"));
+  fprintf(fp, _("  in the session file are given in comment lines.                                    \n"));
+  fprintf(fp, _("   # passthrough : pass user input directly to the shell. allows user to run some    \n"));
+  fprintf(fp, _("                   commands interactivly.                                            \n"));
+  fprintf(fp, _("   # delay DELAY : add a DELAY (tenths of second) delay.                             \n"));
   fprintf(fp, _("   Press 'Return' : send line to stdin of shell.                                     \n"));
   fprintf(fp, _("   Press 'x' : exit                                                                  \n"));
-  fprintf(fp, _("   # passthrough : let user input passthrough.                                       \n"));
-  fprintf(fp, _("   # delay DELAY : add a DELAY second delay.                                         \n"));
+  fprintf(fp, _("   Press 'p' : passthrough user input.                                               \n"));
 
 }
 
-void
-doinput()
+void doinput()
 {
 	register int cc;
-	char ibuf[BUFSIZ];
+	char ibuf[BUFSIZ];   // input buffer
 	char cbuf[BUFSIZ];   // command buffer
   char *sbuf;          // session file buffer
   int sbufi, sbufN;
-  int i;
+  int i, j;
 #ifdef HAVE_openpty
 	(void) close(slave);
 #endif
@@ -251,58 +259,99 @@ doinput()
   strcpy( sbuf+sbufi*BUFSIZ, "EOF" );
 
 
-
   // loop through session commands
   for( sbufi = 0; sbufi < sbufN; sbufi++ )
   {
-    if( strcmp( sbuf+sbufi*BUFSIZ, "EOF" ) == 0 )
+    // copy line to the input buffer
+    strcpy( ibuf, sbuf+sbufi*BUFSIZ );
+
+    if( strcmp( ibuf, "EOF" ) == 0 )
       break; // last line in the file
 
-    // parse the line to see if it is a 
-    // control command
-    parsectl( sbuf+sbufi*BUFSIZ, cbuf );
-    // handl control commands
-    if( strstr( cbuf, "pass" ) != NULL )
+    // check line for a control command
+    if( parsectl( ibuf, cbuf ) )
     {
-      passthrough("\n\r"); // passthrough input until a blank line is entered
-      cbuf[0] = '\0'; // clear the command buffer
+      // handle control commands
+      if( strstr( cbuf, "pass" ) != NULL )
+      {
+        passthrough(); // passthrough input
+        cbuf[0] = '\0'; // clear the command buffer
+        continue;
+      }
+
+      if( strstr( cbuf, "delay" ) != NULL )
+      {
+        delay( strtoll( strchr(cbuf,' ') == NULL ? "5" : strchr(cbuf,' '), NULL, 10 ) ); // pause for some time
+        cbuf[0] = '\0'; // clear command buffer
+        continue;
+      }
+
       continue;
+
     }
 
-    if( strstr( cbuf, "delay" ) != NULL )
-    {
-      delay( strchr(cbuf,' ') ); // pause for some time
-      cbuf[0] = '\0'; // clear command buffer
-      continue;
-    }
-
-
-    // get ready
+    // ok, we have an input line. we wait for the user before sending
+    // it to the shell unless non-interactive mode is on, and then we
+    // pause for a half second.
     if(nflg) // non-interactive mode
-      delay("5"); // use a half second dalay between commands
-    else // user has to hit enter to start new command
-      cc = read(0, cbuf, BUFSIZ);
+      delay(5); // half second dalay
+    else // read user command
+    {
+      j = 0;
+      while( read(0,cbuf+j,BUFSIZ-j) > 0 ) // read characters until buffer is full or end of file or error
+      {
+        if( cbuf[j] == '\n' || cbuf[j] == '\r' )
+        {
+          cbuf[j] = '\0';
+          break;
+        }
+        j++;
+      }
+    }
 
+    if( strcmp( cbuf, "exit" ) == 0 || strcmp( cbuf, "x" ) == 0 )
+      done();
 
-    // start sending commands to the shell
-    strcpy( ibuf, sbuf+sbufi*BUFSIZ );
+    if( strcmp( cbuf, "passthrough" ) == 0 || strcmp( cbuf, "pass" ) == 0 || strcmp( cbuf, "p" ) == 0 )
+      passthrough();
+
+    // send input to the shell, one character at a time.
+    // when we get to the end of the line, we wait for the user.
     for( i = 0; i < strlen(ibuf); i++)
     {
-      if( strchr( "\n\r\0", ibuf[i] ) )
+      if( ibuf[i] == '\n' || ibuf[i] == '\r' )
       { // newline or end of string
-        if(nflg) // non-interactive mode
-          delay("5"); // half second dalay
-        else // user has to hit enter when newline/return is incountered
-          cc = read(0, cbuf, BUFSIZ);
 
-        if(cbuf[0] == 'x')
+        if(nflg) // non-interactive mode
+          delay(5); // half second dalay
+        else // read user command
+        {
+          j = 0;
+          while( read(0,cbuf+j,BUFSIZ-j) > 0 ) // read characters until buffer is full or end of file or error
+          {
+            if( cbuf[j] == '\n' || cbuf[j] == '\r' )
+            {
+              cbuf[j] = '\0';
+              break;
+            }
+            j++;
+          }
+        }
+
+        if( strcmp( cbuf, "exit" ) == 0 || strcmp( cbuf, "x" ) == 0 )
           done();
+
+        if( strcmp( cbuf, "passthrough" ) == 0 || strcmp( cbuf, "p" ) == 0 )
+          passthrough();
+
+
       }
 
       // send character
       (void) write(master, ibuf+i, 1);
 
-      delay("2");
+      if(dflg) // delays flag
+        delay(2); // half second dalay
     }
 
 
@@ -311,66 +360,11 @@ doinput()
   free(sbuf);
 
   // read user input for remainder of the session.
-  passthrough(NULL);
+  /*passthrough();*/
 	done();
 }
 
-int
-parsectl( const char* ibuf, char* cbuf )
-{
-  // control commands are given in comments.
-  // any line that starts with a # could be a control command
-  if( strchr( ibuf, '#' ) == NULL )
-    return 0;
-
-  // find first '#' and first non-space. if these are the same,
-  // then we have a line that starts with (possibly) white space and
-  // a '#'
-  if( strspn( ibuf, "#" ) == strcspn( ibuf, " ")+1 )
-    return 0;
-
-  strcpy( cbuf, ibuf + strspn(ibuf," #") );
-
-  return 1;
-}
-
-int
-passthrough(const char *terms)
-{
-  // pass the user input to the tty until one of
-  // the terminating chars is read.
-	register int cc;
-	char buf[BUFSIZ];
-	while ((cc = read(0, buf, 1)) > 0)
-  {
-		(void) write(master, buf, 1);
-    if( terms != NULL && strchr( terms, buf[0] ) )
-        break;
-  }
-}
-
-void
-delay(const char *_dt)
-{
-  // delay, by calling nanosleep, for a specified
-  // number of tenths of a second.
-  // we accept a string, as opposed to an int, so that we
-  // can support extracting the delay argument from a text file.
-  long long dt;
-  if( !dflg )
-    return;
-
-  dt = strtoll( _dt == NULL ? "5" : _dt, NULL, 10 )*1e8;
-  struct timespec t;
-  t.tv_sec  = dt/1000000000;
-  t.tv_nsec = dt%1000000000;
-  nanosleep(&t, NULL);
-
-  return;
-}
-
-void
-finish()
+void finish()
 {
 #if defined(SVR4)
 	int status;
@@ -399,7 +393,7 @@ dooutput()
 	int cc;
 	char obuf[BUFSIZ];
 
-	setbuf(stdout, NULL);
+	setbuf(stdout, NULL); // set stdout to unbuffered
 	(void) close(0);
 #ifdef HAVE_openpty
 	(void) close(slave);
@@ -594,3 +588,58 @@ getslave()
 	(void) ioctl(slave, TIOCSCTTY, 0);
 #endif /* SVR4 */
 }
+
+
+
+
+
+// parse a line to see if it contains a control command
+int parsectl( const char* ibuf, char* cbuf )
+{
+  // control commands are given in comments.
+  // any line that starts with a # could be a control command
+  if( strchr( ibuf, '#' ) == NULL )
+  {
+    cbuf[0] = '\0';
+    return 0;
+  }
+
+  // find first '#' and first non-space. if these are the same,
+  // then we have a line that starts with (possibly) white space and
+  // a '#'
+  if( strspn( ibuf, "#" ) == strcspn( ibuf, " ")+1 )
+    return 0;
+
+  // copy the command into cbuf
+  strcpy( cbuf, ibuf + strspn(ibuf," #") );
+
+  return 1;
+}
+
+int passthrough()
+{
+  // pass the user input to the tty until one of
+  // the terminating chars is read.
+	register int cc;
+	char buf[BUFSIZ];
+	while ((cc = read(0, buf, 1)) > 0)
+  {
+    if( buf[0] == 3 ) // end of transmission
+        break;
+		(void) write(master, buf, 1);
+  }
+}
+
+void delay(long counts)
+{
+  // delay, by calling nanosleep, for a specified number of counts.
+  // one count is a tenth of a second.
+  long long dt = counts*1e8;
+  struct timespec t;
+  t.tv_sec  = dt/1000000000;
+  t.tv_nsec = dt%1000000000;
+  nanosleep(&t, NULL);
+
+  return;
+}
+
