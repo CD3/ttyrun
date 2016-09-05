@@ -137,13 +137,15 @@ int main(int argc, char *argv[])
 
 	char cbuf[BUFSIZ];   // command buffer
 
+  dflg = 0;
+  nflg = 0;
 	while ((ch = getopt(argc, argv, "e:dnh?")) != EOF)
 		switch((char)ch) {
 		case 'd': // add delays
-		  dflg++;
+		  dflg = 1;
 			break;
 		case 'n': // non-interactive mode
-      nflg++;
+      nflg = 1;
 			break;
 		case 'e':
 			command = strdup(optarg);
@@ -276,18 +278,27 @@ void doinput()
       {
         passthrough(); // passthrough input
         cbuf[0] = '\0'; // clear the command buffer
-        continue;
       }
 
       if( strstr( cbuf, "delay" ) != NULL )
       {
         delay( strtoll( strchr(cbuf,' ') == NULL ? "5" : strchr(cbuf,' '), NULL, 10 ) ); // pause for some time
         cbuf[0] = '\0'; // clear command buffer
-        continue;
       }
 
-      continue;
+      if( strstr( cbuf, "interactiveon" ) != NULL )
+        nflg = 0;
 
+      if( strstr( cbuf, "interactiveoff" ) != NULL )
+        nflg = 1;
+
+      if( strstr( cbuf, "delayson" ) != NULL )
+        dflg = 1;
+
+      if( strstr( cbuf, "delaysoff" ) != NULL )
+        dflg = 0;
+
+      continue;
     }
 
     // ok, we have an input line. we wait for the user before sending
