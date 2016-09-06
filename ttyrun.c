@@ -59,22 +59,11 @@
 #include <string.h>
 #include <stdlib.h>
 
-#if defined(SVR4)
 #include <fcntl.h>
 #include <stropts.h>
-#endif /* SVR4 */
-
-#define HAVE_inet_aton
-#define HAVE_scsi_h
-#define HAVE_kd_h
 
 #define _(FOO) FOO
 
-#ifdef HAVE_openpty
-#include <libutil.h>
-#endif
-
-#if defined(SVR4) && !defined(CDEL)
 #if defined(_POSIX_VDISABLE)
 #define CDEL _POSIX_VDISABLE
 #elif defined(CDISABLE)
@@ -82,7 +71,6 @@
 #else /* not _POSIX_VISIBLE && not CDISABLE */
 #define CDEL 255
 #endif /* not _POSIX_VISIBLE && not CDISABLE */
-#endif /* SVR4 && ! CDEL */
 
 
 typedef struct header {
@@ -120,11 +108,6 @@ struct	termios tt;
 struct	winsize win;
 int	lb;
 int	l;
-#if !defined(SVR4)
-#ifndef HAVE_openpty
-char	line[] = "/dev/ptyXX";
-#endif
-#endif /* !SVR4 */
 int	dflg;
 int	nflg;
 
@@ -242,9 +225,6 @@ void doinput()
   char *sbuf;          // session file buffer
   int sbufi, sbufN;
   int i, j;
-#ifdef HAVE_openpty
-	(void) close(slave);
-#endif
 
   // read the session file into memory
   sbufN = 0;
@@ -380,11 +360,7 @@ void doinput()
 
 void finish()
 {
-#if defined(SVR4)
 	int status;
-#else /* !SVR4 */
-	union wait status;
-#endif /* !SVR4 */
 	register int pid;
 	register int die = 0;
 
@@ -409,9 +385,6 @@ dooutput()
 
 	setbuf(stdout, NULL); // set stdout to unbuffered
 	(void) close(0);
-#ifdef HAVE_openpty
-	(void) close(slave);
-#endif
 	for (;;) {
 		Header h;
 
@@ -460,7 +433,6 @@ fixtty()
 	struct termios rtt;
 
 	rtt = tt;
-#if defined(SVR4)
 	rtt.c_iflag = 0;
 	rtt.c_lflag &= ~(ISIG|ICANON|XCASE|ECHO|ECHOE|ECHOK|ECHONL);
 	rtt.c_oflag = OPOST;
@@ -470,10 +442,6 @@ fixtty()
 	rtt.c_cc[VKILL] = CDEL;
 	rtt.c_cc[VEOF] = 1;
 	rtt.c_cc[VEOL] = 0;
-#else /* !SVR4 */
-	cfmakeraw(&rtt);
-	rtt.c_lflag &= ~ECHO;
-#endif /* !SVR4 */
 	(void) tcsetattr(0, TCSAFLUSH, &rtt);
 }
 
@@ -500,7 +468,6 @@ done()
 void
 getmaster()
 {
-#if defined(SVR4)
 	(void) tcgetattr(0, &tt);
   // get terminal size
 	(void) ioctl(0, TIOCGWINSZ, (char *)&win);
@@ -508,61 +475,11 @@ getmaster()
 		perror("open(\"/dev/ptmx\", O_RDWR)");
 		fail();
 	}
-#else /* !SVR4 */
-#ifdef HAVE_openpty
-	(void) tcgetattr(0, &tt);
-	(void) ioctl(0, TIOCGWINSZ, (char *)&win);
-	if (openpty(&master, &slave, NULL, &tt, &win) < 0) {
-		fprintf(stderr, _("openpty failed\n"));
-		fail();
-	}
-#else
-#ifdef HAVE_getpt
-	if ((master = getpt()) < 0) {
-		perror("getpt()");
-		fail();
-	}
-#else
-	char *pty, *bank, *cp;
-	struct stat stb;
-
-	pty = &line[strlen("/dev/ptyp")];
-	for (bank = "pqrs"; *bank; bank++) {
-		line[strlen("/dev/pty")] = *bank;
-		*pty = '0';
-		if (stat(line, &stb) < 0)
-			break;
-		for (cp = "0123456789abcdef"; *cp; cp++) {
-			*pty = *cp;
-			master = open(line, O_RDWR);
-			if (master >= 0) {
-				char *tp = &line[strlen("/dev/")];
-				int ok;
-
-				/* verify slave side is usable */
-				*tp = 't';
-				ok = access(line, R_OK|W_OK) == 0;
-				*tp = 'p';
-				if (ok) {
-					(void) tcgetattr(0, &tt);
-          (void) ioctl(0, TIOCGWINSZ, (char *)&win);
-					return;
-				}
-				(void) close(master);
-			}
-		}
-	}
-	fprintf(stderr, _("Out of pty's\n"));
-	fail();
-#endif /* not HAVE_getpt */
-#endif /* not HAVE_openpty */
-#endif /* !SVR4 */
 }
 
 void
 getslave()
 {
-#if defined(SVR4)
 	(void) setsid();
 	grantpt( master);
 	unlockpt(master);
@@ -579,32 +496,12 @@ getslave()
 			perror("ioctl(fd, I_PUSH, ldterm)");
 			fail();
 		}
-#ifndef _HPUX_SOURCE
-		if (ioctl(slave, I_PUSH, "ttcompat") < 0) {
-			perror("ioctl(fd, I_PUSH, ttcompat)");
-			fail();
-		}
-#endif
+
 		(void) ioctl(0, TIOCGWINSZ, (char *)&win);
 	}
 
   // set the terminal size
 	(void) ioctl(slave, TIOCSWINSZ, (char *)&win);
-
-#else /* !SVR4 */
-#ifndef HAVE_openpty
-	line[strlen("/dev/")] = 't';
-	slave = open(line, O_RDWR);
-	if (slave < 0) {
-		perror(line);
-		fail();
-	}
-	(void) tcsetattr(slave, TCSAFLUSH, &tt);
-	(void) ioctl(slave, TIOCSWINSZ, (char *)&win);
-#endif
-	(void) setsid();
-	(void) ioctl(slave, TIOCSCTTY, 0);
-#endif /* SVR4 */
 
 }
 
