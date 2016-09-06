@@ -47,8 +47,10 @@
  * - modify `ttyrec' to create `ttyrun'.
  */
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/wait.h>
+#include <sys/file.h>
 
 #include <termios.h>
 #include <stdio.h>
@@ -372,6 +374,7 @@ void doinput()
 
   // read user input for remainder of the session.
   /*passthrough();*/
+
 	done();
 }
 
@@ -499,6 +502,7 @@ getmaster()
 {
 #if defined(SVR4)
 	(void) tcgetattr(0, &tt);
+  // get terminal size
 	(void) ioctl(0, TIOCGWINSZ, (char *)&win);
 	if ((master = open("/dev/ptmx", O_RDWR)) < 0) {
 		perror("open(\"/dev/ptmx\", O_RDWR)");
@@ -541,8 +545,7 @@ getmaster()
 				*tp = 'p';
 				if (ok) {
 					(void) tcgetattr(0, &tt);
-				    	(void) ioctl(0, TIOCGWINSZ, 
-						(char *)&win);
+          (void) ioctl(0, TIOCGWINSZ, (char *)&win);
 					return;
 				}
 				(void) close(master);
@@ -584,6 +587,10 @@ getslave()
 #endif
 		(void) ioctl(0, TIOCGWINSZ, (char *)&win);
 	}
+
+  // set the terminal size
+	(void) ioctl(slave, TIOCSWINSZ, (char *)&win);
+
 #else /* !SVR4 */
 #ifndef HAVE_openpty
 	line[strlen("/dev/")] = 't';
@@ -598,6 +605,7 @@ getslave()
 	(void) setsid();
 	(void) ioctl(slave, TIOCSCTTY, 0);
 #endif /* SVR4 */
+
 }
 
 

@@ -6,6 +6,7 @@ echo "interactive mode is off. delays are on"
 echo "a three second delay is comming"
 # delay 30
 echo "delay is over"
+echo "turning interactive mode on. press enter."
 # interactiveon
 echo "interactive mode is on. delays are on. press enter"
 # delaysoff
@@ -15,4 +16,3 @@ echo "entering pass through mode. after pressing enter, you will be able to inte
 echo "running session commands again."
 # this is a comment
 echo "done with commands. well now exit."
-exit
