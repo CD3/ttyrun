@@ -1,0 +1,3 @@
+# interactiveoff
+# delaysoff
+echo "test"
