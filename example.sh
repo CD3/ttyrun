@@ -16,3 +16,4 @@ echo "entering pass through mode. after pressing enter, you will be able to inte
 echo "running session commands again."
 # this is a comment
 echo "done with commands. well now exit."
+exit
