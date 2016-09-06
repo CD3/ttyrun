@@ -448,7 +448,6 @@ fixtty()
 void
 fail()
 {
-
 	(void) kill(0, SIGTERM);
 	done();
 }
